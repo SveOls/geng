@@ -11,8 +11,6 @@ mod rect;
 
 pub trait Draw: std::fmt::Debug {
     fn draw(&self, img: &mut [u32], width: usize, pos: (usize, usize));
-    fn width(&self) -> usize; 
-    fn height(&self) -> usize;
     fn contains(&self, pos: (usize, usize)) -> bool;
     fn get_outline(&self) -> Box<dyn Draw>;
 }
@@ -23,6 +21,7 @@ pub struct Image {
     buff: Vec<u32>,
     change: bool,
     open: bool,
+    hold: bool,
     effects: HashMap<Key, fn(&mut Image, Option<usize>)>,
     items: LinkedList<(Box<dyn Draw>, (usize, usize), usize)>,
     queue: (VecDeque<usize>, usize),
@@ -50,6 +49,7 @@ impl Image {
             items: LinkedList::new(),
             queue: (VecDeque::new(), 0),
             selected: None,
+            hold: false,
         })
     }
     pub fn is_open(&self) -> bool {
@@ -149,12 +149,22 @@ impl Image {
     fn draw_selected(&mut self, buff: &mut [u32]) {
         for (item, pos, id) in self.items.iter() {
             if Some(*id) == self.selected {
+                println!("{:?}", self.selected);
                 item.get_outline().draw(buff, self.get_size().0, *pos);
             }
         }
     }
-    pub fn select(&mut self, id: usize) {
-        self.selected = Some(id);
+    pub fn select(&mut self, id: Option<usize>) {
+        self.selected = id;
+        self.change = true;
+    }
+    pub fn release(&mut self) {
+        self.selected = None;
+        self.change = true;
+    }
+    pub fn hold(&mut self, id: Option<usize>) {
+        self.selected = id;
+        self.hold = true;
         self.change = true;
     }
     pub fn get_mouse_pos(&self, mode: MouseMode) -> Option<(f32, f32)> {
@@ -191,7 +201,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     wind.add_effect(Key::Escape, |img: &mut Image, _: Option<usize> | img.close());
 
     
-    let test = rect::Rect::from_bmp("./data/tile.bmp")?;
+    let test = rect::Tile::from_bmp("./data/tile.bmp")?;
     let test2 = rect::Rect::new(vec![vec![0xAA00FF00; 30]; 20]);
     let mut a = Vec::new();
 
@@ -209,14 +219,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     wind.add_effect(Key::D, |img: &mut Image, _: Option<usize> | mem::drop(img.remove_item(3)));
     wind.add_effect(Key::F, |img: &mut Image, _: Option<usize> | mem::drop(img.remove_item(4)));
     wind.add_effect(Key::G, |img: &mut Image, _: Option<usize> | mem::drop(img.remove_item(5)));
-    wind.add_effect(Key::Z, |img: &mut Image, _: Option<usize> | img.select(1));
-    wind.add_effect(Key::X, |img: &mut Image, _: Option<usize> | img.select(2));
-    wind.add_effect(Key::C, |img: &mut Image, _: Option<usize> | img.select(3));
-    wind.add_effect(Key::V, |img: &mut Image, _: Option<usize> | img.select(4));
-    wind.add_effect(Key::B, |img: &mut Image, _: Option<usize> | img.select(5));
+    wind.add_effect(Key::Z, |img: &mut Image, _: Option<usize> | img.select(Some(1)));
+    wind.add_effect(Key::X, |img: &mut Image, _: Option<usize> | img.select(Some(2)));
+    wind.add_effect(Key::C, |img: &mut Image, _: Option<usize> | img.select(Some(3)));
+    wind.add_effect(Key::V, |img: &mut Image, _: Option<usize> | img.select(Some(4)));
+    wind.add_effect(Key::B, |img: &mut Image, _: Option<usize> | img.select(Some(5)));
 
     // wind.remove_item(a[0]);
-    wind.selected = wind.get_clicked(15, 115);
+    // wind.selected = wind.get_clicked(15, 115);
 
     while wind.is_open() {
         wind.limit_update_rate(Some(Duration::from_millis(20)));
@@ -230,12 +240,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         if wind.get_mouse_down(MouseButton::Left) {
             if let Some((x, y)) = wind.get_mouse_pos(MouseMode::Clamp) {
                 if let Some(b) = wind.get_clicked(x as usize, y as usize) {
-                    wind.select(b);
+                    wind.select(Some(b));
                 }
             }
         } else if wind.get_mouse_down(MouseButton::Right) {
-            if let Some((x, y)) = wind.get_mouse_pos(MouseMode::Clamp) {
-                // wind.add_item(Box::new(test2.clone()), (x as usize, y as usize));
+            if !wind.hold {
+                if let Some((x, y)) = wind.get_mouse_pos(MouseMode::Clamp) {
+                    if let Some(b) = wind.get_clicked(x as usize, y as usize) {
+                        wind.hold(Some(b));
+                    }
+                }
             }
         } 
     }
